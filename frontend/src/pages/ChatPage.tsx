@@ -1,4 +1,5 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   Box,
   Button,
@@ -73,6 +74,7 @@ const suggestionGroups = [
 ];
 
 export default function ChatPage() {
+  const location = useLocation();
   const [input, setInput] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([
     {
@@ -99,6 +101,15 @@ export default function ChatPage() {
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    const prefill = (location.state as { prefill?: string } | null)?.prefill;
+    if (prefill) {
+      void ask(prefill);
+      window.history.replaceState({}, document.title);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
