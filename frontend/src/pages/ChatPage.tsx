@@ -1,14 +1,75 @@
 import { FormEvent, useState } from "react";
-import { Box, Button, Chip, Paper, Stack, TextField, Typography } from "@mui/material";
+import {
+  Box,
+  Button,
+  Chip,
+  Paper,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
 import { api } from "../api/client";
 
 type Msg = { role: "user" | "assistant"; text: string; sources?: string[] };
 
-const suggestions = [
-  "Why did Japan underperform?",
-  "Compare Meta vs TikTok",
-  "Which country should receive more budget?",
-  "Give me a portfolio overview",
+const suggestionGroups = [
+  {
+    title: "Portfolio",
+    color: "#0A3D4A",
+    items: [
+      "Give me a portfolio overview",
+      "What is our current ROAS?",
+      "How much did we spend?",
+      "Morning briefing summary",
+    ],
+  },
+  {
+    title: "Campaigns",
+    color: "#1F9D6C",
+    items: [
+      "What is the best campaign?",
+      "Why is a campaign losing money?",
+      "Which campaign has the worst health?",
+      "Which campaigns should we pause?",
+      "Compare top campaigns by spend",
+    ],
+  },
+  {
+    title: "Countries",
+    color: "#2D7FF9",
+    items: [
+      "Why did Japan underperform?",
+      "How is India performing?",
+      "Singapore spend vs conversions",
+      "Which country should receive more budget?",
+      "What is the best country by ROAS?",
+      "How is South Korea doing?",
+      "Indonesia performance snapshot",
+    ],
+  },
+  {
+    title: "Platforms",
+    color: "#E85D4C",
+    items: [
+      "Compare Meta vs TikTok",
+      "Compare Google Ads vs LinkedIn",
+      "What is the best platform?",
+      "How is TikTok performing?",
+      "How is Meta performing?",
+    ],
+  },
+  {
+    title: "Actions & risks",
+    color: "#E0A100",
+    items: [
+      "Where should we increase budget?",
+      "Show top anomalies and risks",
+      "What opportunities do we have?",
+      "Forecast next week revenue",
+      "What is CPA?",
+      "What can you help with?",
+    ],
+  },
 ];
 
 export default function ChatPage() {
@@ -16,7 +77,7 @@ export default function ChatPage() {
   const [msgs, setMsgs] = useState<Msg[]>([
     {
       role: "assistant",
-      text: "Ask about countries, platforms, budget moves, or campaign performance. Answers come from rule-based intelligence over your tenant data.",
+      text: "Ask about portfolio KPIs, campaigns, Asia countries, platforms, budget moves, anomalies, or forecasts. Answers are rule-based over your tenant data — pick a suggested question below.",
     },
   ]);
   const [busy, setBusy] = useState(false);
@@ -30,7 +91,10 @@ export default function ChatPage() {
       const { data } = await api.post("/api/ai/chat", { question });
       setMsgs((m) => [...m, { role: "assistant", text: data.answer, sources: data.sources }]);
     } catch {
-      setMsgs((m) => [...m, { role: "assistant", text: "Chat failed. Check permissions or feature flags." }]);
+      setMsgs((m) => [
+        ...m,
+        { role: "assistant", text: "Chat failed. Check permissions or feature flags." },
+      ]);
     } finally {
       setBusy(false);
     }
@@ -47,21 +111,60 @@ export default function ChatPage() {
         AI Chat
       </Typography>
       <Typography color="text.secondary" sx={{ mb: 2 }}>
-        Natural-language questions answered by the rule engine (no LLM keys).
+        Rule-based Q&A across portfolio, campaigns, countries, platforms, and actions (no LLM keys).
       </Typography>
-      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
-        {suggestions.map((s) => (
-          <Chip key={s} label={s} onClick={() => ask(s)} clickable />
+
+      <Stack spacing={1.5} sx={{ mb: 2 }}>
+        {suggestionGroups.map((group) => (
+          <Box key={group.title}>
+            <Typography
+              variant="caption"
+              sx={{ fontWeight: 700, color: group.color, letterSpacing: 0.4 }}
+            >
+              {group.title}
+            </Typography>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 0.6 }}>
+              {group.items.map((s) => (
+                <Chip
+                  key={s}
+                  label={s}
+                  onClick={() => ask(s)}
+                  clickable
+                  disabled={busy}
+                  sx={{
+                    borderColor: `${group.color}55`,
+                    color: group.color,
+                    fontWeight: 600,
+                    bgcolor: `${group.color}10`,
+                    "&:hover": { bgcolor: `${group.color}22` },
+                  }}
+                  variant="outlined"
+                />
+              ))}
+            </Stack>
+          </Box>
         ))}
       </Stack>
-      <Paper sx={{ p: 2, minHeight: 420, mb: 2, display: "flex", flexDirection: "column", gap: 1.5 }}>
+
+      <Paper
+        sx={{
+          p: 2,
+          minHeight: 420,
+          mb: 2,
+          display: "flex",
+          flexDirection: "column",
+          gap: 1.5,
+          borderRadius: 3,
+          border: "1px solid #d7e6ee",
+        }}
+      >
         {msgs.map((m, i) => (
           <Box
             key={i}
             sx={{
               alignSelf: m.role === "user" ? "flex-end" : "flex-start",
               maxWidth: "85%",
-              bgcolor: m.role === "user" ? "#0B3D2E" : "#F3F0E8",
+              bgcolor: m.role === "user" ? "#0A3D4A" : "#F3FAFF",
               color: m.role === "user" ? "#fff" : "inherit",
               px: 2,
               py: 1.2,
@@ -80,7 +183,7 @@ export default function ChatPage() {
       <Stack component="form" direction="row" spacing={1} onSubmit={onSubmit}>
         <TextField
           fullWidth
-          placeholder="Ask a question…"
+          placeholder="Ask about ROAS, Japan, Meta vs TikTok, budget, anomalies…"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={busy}

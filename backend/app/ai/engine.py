@@ -193,7 +193,7 @@ class IntelligenceEngine:
         ).strip()
 
     def chat(self, question: str, context: dict[str, Any]) -> tuple[str, list[str]]:
-        q = question.lower()
+        q = question.lower().strip()
         sources: list[str] = []
         anomalies = context.get("anomalies", [])
         recommendations = context.get("recommendations", [])
@@ -202,87 +202,363 @@ class IntelligenceEngine:
         campaigns = context.get("campaigns", [])
         kpis = context.get("kpis", {})
 
-        if "japan" in q or "jp" in q:
-            jp = next((c for c in countries if c.get("code") == "JP"), None)
-            jp_anom = [a for a in anomalies if "JP" in a.get("entity_key", "") or "Japan" in a.get("message", "")]
-            sources.append("countries:JP")
-            if jp:
-                msg = (
-                    f"Japan spent ${jp['spend']:,.0f} with ROAS {jp['roas']:.2f} "
-                    f"and {jp['conversions']} conversions."
-                )
-                if jp_anom:
-                    msg += " " + jp_anom[0]["message"]
-                    sources.append("anomalies")
-                else:
-                    msg += " Underperformance is often driven by elevated CPC and softer conversion rates."
-                return msg, sources
+        def country_by_code(code: str) -> dict | None:
+            return next((c for c in countries if c.get("code") == code), None)
 
-        if "india" in q or "in " in q or q.strip().endswith(" in"):
-            india = next((c for c in countries if c.get("code") == "IN"), None)
-            sources.append("countries:IN")
-            if india:
+        def platform_by_code(code: str) -> dict | None:
+            return next((p for p in platforms if p.get("code") == code), None)
+
+        def country_answer(code: str, name: str) -> tuple[str, list[str]] | None:
+            row = country_by_code(code)
+            if not row:
+                return None
+            src = [f"countries:{code}"]
+            anom = [
+                a
+                for a in anomalies
+                if code in a.get("entity_key", "") or name.lower() in a.get("message", "").lower()
+            ]
+            msg = (
+                f"{name} spent ${row['spend']:,.0f} with ROAS {row['roas']:.2f}, "
+                f"{row['conversions']:,} conversions, and CTR {row['ctr'] * 100:.2f}%."
+            )
+            if anom:
+                msg += f" Watch-out: {anom[0]['message']}"
+                src.append("anomalies")
+            return msg, src
+
+        # Help / capabilities
+        if any(k in q for k in ("what can you", "help", "capabilities", "what do you know")):
+            return (
+                "I answer from your tenant metrics using rules. Try: portfolio overview, best/worst "
+                "campaign, health scores, pause/increase budget, anomalies, forecasts, CTR/ROAS/CPA, "
+                "country deep-dives (Japan, India, Singapore, Korea, Indonesia…), and platform compares "
+                "(Meta vs TikTok, Google vs LinkedIn).",
+                ["help"],
+            )
+
+        # Country deep-dives
+        country_aliases = [
+            (("japan", " jp", "jp ", "tokyo"), "JP", "Japan"),
+            (("india", " delhi", " mumbai"), "IN", "India"),
+            (("singapore", " sg", "sg "), "SG", "Singapore"),
+            (("malaysia", " my ", "kuala"), "MY", "Malaysia"),
+            (("indonesia", " jakarta", " id "), "ID", "Indonesia"),
+            (("vietnam", " vietnam", " vn "), "VN", "Vietnam"),
+            (("thailand", " bangkok", " th "), "TH", "Thailand"),
+            (("philippines", " manila", " ph "), "PH", "Philippines"),
+            (("korea", " south korea", " seoul", " kr "), "KR", "South Korea"),
+            (("taiwan", " taipei", " tw "), "TW", "Taiwan"),
+            (("hong kong", " hk "), "HK", "Hong Kong"),
+        ]
+        for aliases, code, name in country_aliases:
+            if any(a.strip() in q for a in aliases) or f" {code.lower()} " in f" {q} ":
+                ans = country_answer(code, name)
+                if ans:
+                    return ans
+
+        # Best / worst country
+        if countries and ("best country" in q or "top country" in q or "which country is best" in q):
+            best = max(countries, key=lambda c: c.get("roas", 0))
+            sources.append(f"countries:{best['code']}")
+            return (
+                f"Best country by ROAS is {best['name']} at {best['roas']:.2f} "
+                f"(${best['spend']:,.0f} spend, {best['conversions']:,} conversions).",
+                sources,
+            )
+        if countries and (
+            "worst country" in q or "weakest country" in q or "which country is worst" in q
+        ):
+            worst = min(countries, key=lambda c: c.get("roas", 0))
+            sources.append(f"countries:{worst['code']}")
+            return (
+                f"Weakest country by ROAS is {worst['name']} at {worst['roas']:.2f}. "
+                f"Review CPC and creative fit before scaling.",
+                sources,
+            )
+        if "which country" in q and ("budget" in q or "more" in q or "invest" in q or "scale" in q):
+            if countries:
+                ranked = sorted(countries, key=lambda c: c.get("roas", 0), reverse=True)
+                top = ranked[0]
+                sources.append(f"countries:{top['code']}")
                 return (
-                    f"India delivered ROAS {india['roas']:.2f} on ${india['spend']:,.0f} spend "
-                    f"with CTR {india['ctr']*100:.2f}%.",
+                    f"Prioritize {top['name']} — highest ROAS at {top['roas']:.2f}. "
+                    f"Consider shifting budget from lower-ROAS markets.",
                     sources,
                 )
 
-        if "singapore" in q or "sg" in q:
-            sg = next((c for c in countries if c.get("code") == "SG"), None)
-            sg_anom = [a for a in anomalies if "SG" in a.get("entity_key", "") or "Singapore" in a.get("message", "")]
-            sources.append("countries:SG")
-            if sg:
-                msg = f"Singapore: spend ${sg['spend']:,.0f}, conversions {sg['conversions']}, ROAS {sg['roas']:.2f}."
-                if sg_anom:
-                    msg += " " + sg_anom[0]["message"]
-                return msg, sources
-
-        if "meta" in q and "tiktok" in q:
-            meta = next((p for p in platforms if p.get("code") == "meta"), None)
-            tt = next((p for p in platforms if p.get("code") == "tiktok"), None)
+        # Platform compares & singles
+        if ("meta" in q and "tiktok" in q) or ("facebook" in q and "tiktok" in q):
+            meta = platform_by_code("meta")
+            tt = platform_by_code("tiktok")
             sources.extend(["platforms:meta", "platforms:tiktok"])
             if meta and tt:
                 winner = "Meta" if meta["roas"] >= tt["roas"] else "TikTok"
                 return (
-                    f"Meta ROAS {meta['roas']:.2f} vs TikTok ROAS {tt['roas']:.2f}. "
+                    f"Meta ROAS {meta['roas']:.2f} (spend ${meta['spend']:,.0f}) vs "
+                    f"TikTok ROAS {tt['roas']:.2f} (spend ${tt['spend']:,.0f}). "
                     f"{winner} is currently more efficient.",
                     sources,
                 )
+        if "google" in q and ("linkedin" in q or "meta" in q or "tiktok" in q):
+            g = platform_by_code("google_ads")
+            other_code = (
+                "linkedin" if "linkedin" in q else "meta" if "meta" in q else "tiktok"
+            )
+            other = platform_by_code(other_code)
+            if g and other:
+                sources.extend(["platforms:google_ads", f"platforms:{other_code}"])
+                winner = g["name"] if g["roas"] >= other["roas"] else other["name"]
+                return (
+                    f"{g['name']} ROAS {g['roas']:.2f} vs {other['name']} ROAS {other['roas']:.2f}. "
+                    f"{winner} wins on efficiency today.",
+                    sources,
+                )
+        if "best platform" in q or "top platform" in q or "which platform" in q:
+            if platforms:
+                best = max(platforms, key=lambda p: p.get("roas", 0))
+                sources.append(f"platforms:{best['code']}")
+                return (
+                    f"Best platform by ROAS is {best['name']} at {best['roas']:.2f} "
+                    f"with ${best['spend']:,.0f} spend.",
+                    sources,
+                )
+        for code, name in (
+            ("meta", "Meta"),
+            ("tiktok", "TikTok"),
+            ("google_ads", "Google Ads"),
+            ("linkedin", "LinkedIn"),
+            ("shopify", "Shopify"),
+        ):
+            aliases = {
+                "meta": ("meta", "facebook", "instagram"),
+                "tiktok": ("tiktok", "tik tok"),
+                "google_ads": ("google ads", "google"),
+                "linkedin": ("linkedin",),
+                "shopify": ("shopify",),
+            }[code]
+            if any(a in q for a in aliases) and (
+                "how is" in q or "performance" in q or "doing" in q or q.strip() == name.lower()
+            ):
+                p = platform_by_code(code)
+                if p:
+                    sources.append(f"platforms:{code}")
+                    return (
+                        f"{p['name']}: spend ${p['spend']:,.0f}, revenue ${p['revenue']:,.0f}, "
+                        f"ROAS {p['roas']:.2f}, CTR {p['ctr'] * 100:.2f}%, "
+                        f"{p['conversions']:,} conversions.",
+                        sources,
+                    )
 
-        if "budget" in q or "where" in q and "more" in q:
-            if recommendations:
+        # Campaign health / best / worst
+        if campaigns and (
+            "best campaign" in q or "top campaign" in q or "winning campaign" in q
+        ):
+            best = max(campaigns, key=lambda c: c.get("roas", 0))
+            sources.append(f"campaigns:{best['name']}")
+            return (
+                f"Best campaign is {best['name']} on {best.get('platform', 'n/a')} "
+                f"with ROAS {best['roas']:.2f} and health {best.get('health_score', 0):.0f}.",
+                sources,
+            )
+        if campaigns and (
+            "worst campaign" in q
+            or ("losing" in q and "money" in q)
+            or ("why" in q and "underperform" in q)
+            or "weakest campaign" in q
+        ):
+            worst = sorted(campaigns, key=lambda c: c.get("roas", 0))[0]
+            sources.append(f"campaigns:{worst['name']}")
+            return (
+                f"{worst['name']} is underperforming with ROAS {worst['roas']:.2f} "
+                f"and health score {worst.get('health_score', 0)}. "
+                f"Likely drivers: weak conversion efficiency and elevated CPA.",
+                sources,
+            )
+        if "health" in q and campaigns:
+            ranked = sorted(campaigns, key=lambda c: c.get("health_score", 0))
+            weak = ranked[0]
+            strong = ranked[-1]
+            sources.extend([f"campaigns:{weak['name']}", f"campaigns:{strong['name']}"])
+            return (
+                f"Lowest health: {weak['name']} ({weak.get('health_score', 0):.0f}). "
+                f"Strongest health: {strong['name']} ({strong.get('health_score', 0):.0f}).",
+                sources,
+            )
+        if ("pause" in q or "stop" in q) and (recommendations or campaigns):
+            pauses = [r for r in recommendations if r.get("action") == "pause"]
+            if pauses:
                 sources.append("recommendations")
-                increases = [r for r in recommendations if r.get("action") == "increase"]
-                pick = increases[0] if increases else recommendations[0]
-                return f"Recommend: {pick['action']} on {pick['target']} — {pick['rationale']}", sources
-
-        if "why" in q and ("losing" in q or "money" in q or "underperform" in q):
+                return (
+                    f"Pause candidate: {pauses[0]['target']} — {pauses[0]['rationale']}",
+                    sources,
+                )
             if campaigns:
                 worst = sorted(campaigns, key=lambda c: c.get("roas", 0))[0]
                 sources.append(f"campaigns:{worst['name']}")
                 return (
-                    f"{worst['name']} is underperforming with ROAS {worst['roas']:.2f} "
-                    f"and health score {worst.get('health_score', 0)}. "
-                    f"Likely drivers: weak conversion efficiency and elevated CPA.",
+                    f"If ROAS stays below 1.0, pause {worst['name']} "
+                    f"(current ROAS {worst['roas']:.2f}) and reallocate.",
                     sources,
                 )
 
-        if "summary" in q or "overview" in q or "how are we" in q:
+        # Budget / recommendations
+        if any(
+            k in q
+            for k in (
+                "budget",
+                "recommend",
+                "increase spend",
+                "decrease spend",
+                "reallocate",
+                "where should",
+                "scale",
+            )
+        ):
+            if recommendations:
+                sources.append("recommendations")
+                increases = [r for r in recommendations if r.get("action") == "increase"]
+                decreases = [
+                    r for r in recommendations if r.get("action") in ("decrease", "pause")
+                ]
+                lines = []
+                if increases:
+                    lines.append(
+                        f"Increase: {increases[0]['target']} — {increases[0]['rationale']}"
+                    )
+                if decreases:
+                    lines.append(
+                        f"Reduce/pause: {decreases[0]['target']} — {decreases[0]['rationale']}"
+                    )
+                if not lines:
+                    pick = recommendations[0]
+                    lines.append(
+                        f"{pick['action'].title()} on {pick['target']} — {pick['rationale']}"
+                    )
+                return " ".join(lines), sources
+
+        # Anomalies / risks
+        if any(k in q for k in ("anomal", "risk", "alert", "what went wrong", "issue", "problem")):
+            if anomalies:
+                sources.append("anomalies")
+                top = anomalies[:3]
+                body = " | ".join(a["message"] for a in top)
+                return f"Top anomalies: {body}", sources
+            return ("No high-severity anomalies in the latest rule scan.", sources)
+
+        # Opportunities / trends
+        if any(k in q for k in ("opportunit", "trend", "momentum", "what's working", "working well")):
+            if campaigns:
+                best = max(campaigns, key=lambda c: c.get("roas", 0))
+                sources.append(f"campaigns:{best['name']}")
+                msg = (
+                    f"Strongest momentum: {best['name']} (ROAS {best['roas']:.2f}). "
+                    f"Scale creatives and audiences that are already converting."
+                )
+                if countries:
+                    top_c = max(countries, key=lambda c: c.get("ctr", 0))
+                    msg += f" Highest CTR market: {top_c['name']} ({top_c['ctr'] * 100:.2f}%)."
+                    sources.append(f"countries:{top_c['code']}")
+                return msg, sources
+
+        # Metric definitions / KPI asks
+        if "what is roas" in q or "define roas" in q:
+            return (
+                "ROAS = revenue ÷ spend. Above ~3.0 is strong in this demo; below 1.0 means losing money.",
+                ["glossary:roas"],
+            )
+        if "what is cpa" in q or "define cpa" in q:
+            return (
+                "CPA = spend ÷ conversions. Lower is better. Pair with ROAS before cutting budgets.",
+                ["glossary:cpa"],
+            )
+        if "what is ctr" in q or "define ctr" in q:
+            return (
+                "CTR = clicks ÷ impressions. Rising CTR with flat conversions often means creative is strong but landing/offer is weak.",
+                ["glossary:ctr"],
+            )
+        if "roas" in q and kpis:
             sources.append("kpis")
             return (
-                f"Spend ${kpis.get('spend', 0):,.0f}, revenue ${kpis.get('revenue', 0):,.0f}, "
-                f"ROAS {kpis.get('roas', 0):.2f}, conversions {kpis.get('conversions', 0):,}.",
+                f"Portfolio ROAS is {kpis.get('roas', 0):.2f} "
+                f"(${kpis.get('revenue', 0):,.0f} revenue on ${kpis.get('spend', 0):,.0f} spend).",
                 sources,
             )
+        if "cpa" in q and kpis:
+            sources.append("kpis")
+            return (f"Portfolio CPA is ${kpis.get('cpa', 0):,.2f}.", sources)
+        if "ctr" in q and kpis:
+            sources.append("kpis")
+            return (f"Portfolio CTR is {kpis.get('ctr', 0) * 100:.2f}%.", sources)
+        if ("conversion" in q or "convert" in q) and kpis:
+            sources.append("kpis")
+            return (
+                f"Total conversions: {kpis.get('conversions', 0):,}. "
+                f"Revenue ${kpis.get('revenue', 0):,.0f}.",
+                sources,
+            )
+        if "spend" in q and ("how much" in q or "total" in q or "portfolio" in q) and kpis:
+            sources.append("kpis")
+            return (f"Total spend is ${kpis.get('spend', 0):,.0f}.", sources)
+
+        # Forecast-ish
+        if any(k in q for k in ("forecast", "predict", "next week", "tomorrow", "next month")):
+            if campaigns and kpis:
+                sources.append("kpis")
+                daily = kpis.get("revenue", 0) / 30
+                return (
+                    f"Rule forecast (SMA-style): ~${daily:,.0f}/day revenue if trends hold. "
+                    f"Expect ~${daily * 7:,.0f} next week and ~${daily * 30:,.0f} next month. "
+                    f"Check campaign detail pages for per-campaign horizons.",
+                    sources,
+                )
+
+        # Compare two named campaigns loosely
+        if "compare" in q and campaigns and len(campaigns) >= 2:
+            top2 = sorted(campaigns, key=lambda c: c.get("spend", 0), reverse=True)[:2]
+            sources.extend([f"campaigns:{top2[0]['name']}", f"campaigns:{top2[1]['name']}"])
+            return (
+                f"{top2[0]['name']} ROAS {top2[0]['roas']:.2f} vs "
+                f"{top2[1]['name']} ROAS {top2[1]['roas']:.2f}. "
+                f"{'Favor ' + top2[0]['name'] if top2[0]['roas'] >= top2[1]['roas'] else 'Favor ' + top2[1]['name']} for efficiency.",
+                sources,
+            )
+
+        # Portfolio overview
+        if any(
+            k in q
+            for k in (
+                "summary",
+                "overview",
+                "how are we",
+                "portfolio",
+                "status",
+                "dashboard",
+                "morning",
+                "briefing",
+            )
+        ):
+            sources.append("kpis")
+            best = max(campaigns, key=lambda c: c.get("roas", 0)) if campaigns else None
+            worst = min(campaigns, key=lambda c: c.get("roas", 0)) if campaigns else None
+            msg = (
+                f"Spend ${kpis.get('spend', 0):,.0f}, revenue ${kpis.get('revenue', 0):,.0f}, "
+                f"ROAS {kpis.get('roas', 0):.2f}, conversions {kpis.get('conversions', 0):,}."
+            )
+            if best:
+                msg += f" Best: {best['name']} ({best['roas']:.2f}x)."
+            if worst:
+                msg += f" Needs attention: {worst['name']} ({worst['roas']:.2f}x)."
+            return msg, sources
 
         if anomalies:
             sources.append("anomalies")
             return f"Latest anomaly: {anomalies[0]['message']}", sources
 
         return (
-            "I can help with country performance (e.g. Japan, India, Singapore), "
-            "Meta vs TikTok, budget moves, campaign root causes, and portfolio overview.",
+            "I can help with: portfolio overview, best/worst campaigns & countries, platform compares "
+            "(Meta vs TikTok, Google vs LinkedIn), budget increase/pause, anomalies, health scores, "
+            "CTR/ROAS/CPA, forecasts, and country deep-dives across Asia. Ask one of the suggested prompts.",
             sources,
         )
 
