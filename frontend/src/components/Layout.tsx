@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import {
   AppBar,
+  Avatar,
   Box,
   Button,
   Drawer,
@@ -10,10 +11,12 @@ import {
   Toolbar,
   Typography,
   Chip,
+  Stack,
 } from "@mui/material";
 import { useAuth } from "../auth/AuthContext";
+import { brand } from "../theme";
 
-const width = 240;
+const width = 260;
 
 const links = [
   { to: "/", label: "Executive", roles: ["admin", "agency_manager", "analyst", "guest"] },
@@ -25,9 +28,26 @@ const links = [
   { to: "/admin", label: "Admin", roles: ["admin", "agency_manager"] },
 ];
 
+function roleLabel(role?: string) {
+  if (!role) return "";
+  return role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function companyInitials(name?: string) {
+  if (!name) return "CO";
+  return name
+    .split(" ")
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
+}
+
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const isNova = user?.tenant_name?.toLowerCase().includes("nova");
+  const companyColor = isNova ? "#E85D4C" : "#1F9D6C";
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh" }}>
@@ -36,19 +56,50 @@ export default function Layout() {
         elevation={0}
         sx={{
           zIndex: (t) => t.zIndex.drawer + 1,
-          bgcolor: "#0B3D2E",
+          bgcolor: "#062830",
           backgroundImage:
-            "linear-gradient(120deg, #0B3D2E 0%, #145C45 55%, #1F6F54 100%)",
+            "linear-gradient(110deg, #062830 0%, #0A3D4A 45%, #1A6B7C 100%)",
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
         }}
       >
         <Toolbar sx={{ gap: 2 }}>
-          <Typography variant="h6" sx={{ flexGrow: 1, letterSpacing: 0.4 }}>
-            AIMP
-          </Typography>
+          <Stack direction="row" alignItems="baseline" spacing={1.2} sx={{ flexGrow: 1 }}>
+            <Typography
+              variant="h5"
+              sx={{ fontFamily: '"DM Sans", sans-serif', fontWeight: 700, letterSpacing: "-0.03em" }}
+            >
+              {brand.name}
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{ display: { xs: "none", sm: "block" }, opacity: 0.75, letterSpacing: 0.2 }}
+            >
+              {brand.fullName}
+            </Typography>
+          </Stack>
+
           <Chip
-            size="small"
-            label={`${user?.tenant_name} · ${user?.role}`}
-            sx={{ bgcolor: "rgba(255,255,255,0.15)", color: "#fff" }}
+            avatar={
+              <Avatar sx={{ bgcolor: companyColor, width: 28, height: 28, fontSize: 12, fontWeight: 700 }}>
+                {companyInitials(user?.tenant_name)}
+              </Avatar>
+            }
+            label={
+              <Box sx={{ py: 0.2 }}>
+                <Typography variant="caption" sx={{ display: "block", lineHeight: 1.1, fontWeight: 700, color: "#fff" }}>
+                  {user?.tenant_name}
+                </Typography>
+                <Typography variant="caption" sx={{ display: "block", lineHeight: 1.1, opacity: 0.75, color: "#fff" }}>
+                  {roleLabel(user?.role)}
+                </Typography>
+              </Box>
+            }
+            sx={{
+              height: 42,
+              bgcolor: "rgba(255,255,255,0.12)",
+              border: "1px solid rgba(255,255,255,0.18)",
+              "& .MuiChip-label": { px: 1.2 },
+            }}
           />
           <Button
             color="inherit"
@@ -68,13 +119,33 @@ export default function Layout() {
           [`& .MuiDrawer-paper`]: {
             width,
             boxSizing: "border-box",
-            borderRight: "1px solid #ddd6c8",
-            bgcolor: "#FFFcf7",
+            borderRight: "1px solid #d5e2e8",
+            bgcolor: "#F7FBFD",
           },
         }}
       >
         <Toolbar />
-        <List sx={{ px: 1, pt: 2 }}>
+        <Box sx={{ px: 2, pt: 2.5, pb: 1 }}>
+          <Box
+            sx={{
+              p: 1.8,
+              borderRadius: 2.5,
+              background: `linear-gradient(135deg, ${companyColor} 0%, ${isNova ? "#C44536" : "#0A3D4A"} 100%)`,
+              color: "#fff",
+            }}
+          >
+            <Typography variant="caption" sx={{ opacity: 0.85 }}>
+              Company workspace
+            </Typography>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+              {user?.tenant_name}
+            </Typography>
+            <Typography variant="caption" sx={{ opacity: 0.8 }}>
+              Asia marketing portfolio
+            </Typography>
+          </Box>
+        </Box>
+        <List sx={{ px: 1.2, pt: 1 }}>
           {links
             .filter((l) => user && l.roles.includes(user.role))
             .map((l) => (
@@ -86,7 +157,11 @@ export default function Layout() {
                 sx={{
                   borderRadius: 2,
                   mb: 0.5,
-                  "&.active": { bgcolor: "rgba(11,61,46,0.1)", color: "#0B3D2E" },
+                  "&.active": {
+                    bgcolor: "rgba(10,61,74,0.12)",
+                    color: "#0A3D4A",
+                    fontWeight: 700,
+                  },
                 }}
               >
                 <ListItemText primary={l.label} />
@@ -101,7 +176,7 @@ export default function Layout() {
           p: 3,
           mt: 8,
           background:
-            "radial-gradient(circle at top right, rgba(196,92,38,0.08), transparent 40%), linear-gradient(180deg, #F3F0E8 0%, #E9E4D8 100%)",
+            "radial-gradient(circle at 90% 0%, rgba(45,127,249,0.12), transparent 35%), radial-gradient(circle at 10% 20%, rgba(232,93,76,0.08), transparent 30%), linear-gradient(180deg, #EEF4F7 0%, #E4EEF3 100%)",
           minHeight: "100vh",
         }}
       >
