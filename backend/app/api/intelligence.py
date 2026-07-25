@@ -23,6 +23,8 @@ from app.schemas import (
     ForecastOut,
     InsightOut,
     RecommendationOut,
+    SimulationRequest,
+    SimulationResponse,
 )
 from app.services import analytics
 from app.services.seed import run_intelligence
@@ -121,6 +123,19 @@ def ai_chat(
     }
     answer, sources = IntelligenceEngine().chat(body.question, context)
     return ChatResponse(answer=answer, sources=sources)
+
+
+@router.post("/ai/simulate", response_model=SimulationResponse)
+def simulate_budget(
+    body: SimulationRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if user.role == "guest":
+        raise HTTPException(status_code=403, detail="Guests cannot run simulations")
+    baseline = analytics.campaign_rollups(db, user.tenant_id)
+    result = IntelligenceEngine().simulate_budget(baseline, body.multipliers)
+    return SimulationResponse(**result)
 
 
 @router.post("/ai/regenerate")

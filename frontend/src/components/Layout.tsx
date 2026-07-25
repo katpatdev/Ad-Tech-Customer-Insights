@@ -24,6 +24,7 @@ const links = [
   { to: "/countries", label: "Countries", roles: ["admin", "agency_manager", "analyst"] },
   { to: "/platforms", label: "Platforms", roles: ["admin", "agency_manager", "analyst"] },
   { to: "/insights", label: "AI Insights", roles: ["admin", "agency_manager", "analyst"] },
+  { to: "/simulator", label: "Budget Simulator", roles: ["admin", "agency_manager", "analyst"] },
   { to: "/chat", label: "AI Chat", roles: ["admin", "agency_manager", "analyst"] },
   { to: "/admin", label: "Admin", roles: ["admin", "agency_manager"] },
 ];

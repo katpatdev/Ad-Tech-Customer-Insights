@@ -9,6 +9,7 @@ import CampaignDetailPage from "./pages/CampaignDetailPage";
 import CountriesPage from "./pages/CountriesPage";
 import PlatformsPage from "./pages/PlatformsPage";
 import InsightsPage from "./pages/InsightsPage";
+import SimulatorPage from "./pages/SimulatorPage";
 import ChatPage from "./pages/ChatPage";
 import AdminPage from "./pages/AdminPage";
 
@@ -64,6 +65,14 @@ export default function App() {
           element={
             <Private roles={["agency_manager", "analyst", "admin"]}>
               <InsightsPage />
+            </Private>
+          }
+        />
+        <Route
+          path="simulator"
+          element={
+            <Private roles={["agency_manager", "analyst", "admin"]}>
+              <SimulatorPage />
             </Private>
           }
         />

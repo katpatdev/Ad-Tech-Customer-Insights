@@ -128,6 +128,27 @@ class ChatResponse(BaseModel):
     sources: list[str] = []
 
 
+class SimulationRequest(BaseModel):
+    multipliers: dict[str, float] = Field(default_factory=dict)
+
+
+class SimulationTotals(BaseModel):
+    spend: float
+    revenue: float
+    roas: float
+    conversions: int
+
+
+class SimulationResponse(BaseModel):
+    baseline: SimulationTotals
+    projected: SimulationTotals
+    revenue_delta: float
+    roas_delta: float
+    score: float
+    verdict: str
+    rows: list[dict]
+
+
 class FeatureFlagOut(BaseModel):
     id: int
     key: str

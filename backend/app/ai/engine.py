@@ -160,6 +160,120 @@ class IntelligenceEngine:
                 )
         return recs[:20]
 
+    def simulate_budget(
+        self, baseline: list[dict[str, Any]], multipliers: dict[str, float]
+    ) -> dict[str, Any]:
+        """Project outcomes when spend is scaled per campaign.
+
+        Efficiency follows diminishing returns above the current spend level and
+        recovers slightly when spend is cut, so scaling a winner never stays linear.
+        """
+        rows: list[dict[str, Any]] = []
+        base_spend = base_revenue = base_conv = 0.0
+        new_spend = new_revenue = new_conv = 0.0
+
+        for item in baseline:
+            name = item["name"]
+            spend = float(item.get("spend", 0) or 0)
+            revenue = float(item.get("revenue", 0) or 0)
+            conversions = float(item.get("conversions", 0) or 0)
+            mult = max(0.0, float(multipliers.get(name, 1.0)))
+
+            # Saturation: each extra unit of spend converts less efficiently.
+            if mult > 1:
+                efficiency = 1.0 / (1.0 + 0.35 * (mult - 1.0))
+            elif mult < 1:
+                efficiency = 1.0 + 0.12 * (1.0 - mult)
+            else:
+                efficiency = 1.0
+
+            projected_spend = spend * mult
+            projected_revenue = revenue * mult * efficiency
+            projected_conv = conversions * mult * efficiency
+
+            base_spend += spend
+            base_revenue += revenue
+            base_conv += conversions
+            new_spend += projected_spend
+            new_revenue += projected_revenue
+            new_conv += projected_conv
+
+            rows.append(
+                {
+                    "name": name,
+                    "multiplier": round(mult, 2),
+                    "baseline_spend": round(spend, 2),
+                    "baseline_revenue": round(revenue, 2),
+                    "baseline_roas": round(revenue / spend, 4) if spend else 0.0,
+                    "projected_spend": round(projected_spend, 2),
+                    "projected_revenue": round(projected_revenue, 2),
+                    "projected_roas": round(projected_revenue / projected_spend, 4)
+                    if projected_spend
+                    else 0.0,
+                    "projected_conversions": int(projected_conv),
+                    "efficiency": round(efficiency, 3),
+                }
+            )
+
+        base_roas = base_revenue / base_spend if base_spend else 0.0
+        new_roas = new_revenue / new_spend if new_spend else 0.0
+        revenue_delta = new_revenue - base_revenue
+        roas_delta = new_roas - base_roas
+
+        movers = sorted(
+            (r for r in rows if abs(r["multiplier"] - 1.0) > 0.01),
+            key=lambda r: r["projected_revenue"] - r["baseline_revenue"],
+            reverse=True,
+        )
+        gainer = movers[0] if movers else None
+        loser = movers[-1] if len(movers) > 1 else None
+
+        if not movers:
+            verdict = "No changes yet — move a slider to simulate a budget shift."
+        elif roas_delta > 0.05:
+            verdict = f"Efficient reallocation: portfolio ROAS improves to {new_roas:.2f}."
+        elif roas_delta < -0.05:
+            verdict = f"Careful: portfolio ROAS drops to {new_roas:.2f} due to saturation."
+        else:
+            verdict = f"Roughly neutral: ROAS holds near {new_roas:.2f}."
+
+        narrative = [verdict]
+        if gainer and gainer["projected_revenue"] > gainer["baseline_revenue"]:
+            narrative.append(
+                f"{gainer['name']} adds ${gainer['projected_revenue'] - gainer['baseline_revenue']:,.0f} revenue "
+                f"at {gainer['multiplier']:.2f}x spend."
+            )
+        if loser and loser["projected_revenue"] < loser["baseline_revenue"]:
+            narrative.append(
+                f"{loser['name']} gives up ${loser['baseline_revenue'] - loser['projected_revenue']:,.0f} revenue "
+                f"at {loser['multiplier']:.2f}x spend."
+            )
+        if new_spend > base_spend * 1.001:
+            narrative.append(f"Total spend rises ${new_spend - base_spend:,.0f}.")
+        elif new_spend < base_spend * 0.999:
+            narrative.append(f"Total spend falls ${base_spend - new_spend:,.0f}.")
+
+        score = 50.0 + roas_delta * 40 + (revenue_delta / base_revenue * 60 if base_revenue else 0)
+        return {
+            "baseline": {
+                "spend": round(base_spend, 2),
+                "revenue": round(base_revenue, 2),
+                "roas": round(base_roas, 4),
+                "conversions": int(base_conv),
+            },
+            "projected": {
+                "spend": round(new_spend, 2),
+                "revenue": round(new_revenue, 2),
+                "roas": round(new_roas, 4),
+                "conversions": int(new_conv),
+            },
+            "revenue_delta": round(revenue_delta, 2),
+            "roas_delta": round(roas_delta, 4),
+            "score": round(max(0.0, min(100.0, score)), 1),
+            "verdict": " ".join(narrative),
+            "rows": rows,
+        }
+
     def score_health(self, roas: float, ctr: float, cpa: float, anomaly_count: int) -> float:
         score = 50.0
         score += min(30.0, max(-20.0, (roas - 2.0) * 10))
