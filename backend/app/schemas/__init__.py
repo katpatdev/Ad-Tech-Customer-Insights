@@ -149,6 +149,28 @@ class SimulationResponse(BaseModel):
     rows: list[dict]
 
 
+class ClashRequest(BaseModel):
+    left_id: int
+    right_id: int
+
+
+class ClashFighter(BaseModel):
+    id: int | None = None
+    name: str
+    platform: str = ""
+    points: float
+
+
+class ClashResponse(BaseModel):
+    left: ClashFighter
+    right: ClashFighter
+    winner: str
+    title: str
+    verdict: str
+    rounds: list[dict]
+    radar: dict
+
+
 class FeatureFlagOut(BaseModel):
     id: int
     key: str

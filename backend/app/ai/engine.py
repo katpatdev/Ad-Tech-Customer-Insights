@@ -274,6 +274,119 @@ class IntelligenceEngine:
             "rows": rows,
         }
 
+    def clash_campaigns(self, left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+        """Head-to-head rule battle across five dimensions."""
+
+        def cpa(c: dict[str, Any]) -> float:
+            conv = float(c.get("conversions") or 0)
+            spend = float(c.get("spend") or 0)
+            return spend / conv if conv else spend
+
+        dims = [
+            ("ROAS", "roas", True, 0.35),
+            ("Health", "health_score", True, 0.25),
+            ("CTR", "ctr", True, 0.15),
+            ("Efficiency (1/CPA)", "cpa_inv", True, 0.15),
+            ("Scale (revenue)", "revenue", True, 0.10),
+        ]
+
+        left_stats = {
+            **left,
+            "cpa": cpa(left),
+            "cpa_inv": 1.0 / cpa(left) if cpa(left) else 0.0,
+        }
+        right_stats = {
+            **right,
+            "cpa": cpa(right),
+            "cpa_inv": 1.0 / cpa(right) if cpa(right) else 0.0,
+        }
+
+        rounds: list[dict[str, Any]] = []
+        left_pts = right_pts = 0.0
+        left_radar: list[dict[str, Any]] = []
+        right_radar: list[dict[str, Any]] = []
+
+        for label, key, higher_better, weight in dims:
+            lv = float(left_stats.get(key, 0) or 0)
+            rv = float(right_stats.get(key, 0) or 0)
+            # Normalize to 0-100 relative scores for radar
+            peak = max(lv, rv, 0.0001)
+            left_norm = round((lv / peak) * 100, 1) if higher_better else round((1 - lv / peak) * 100, 1)
+            right_norm = round((rv / peak) * 100, 1) if higher_better else round((1 - rv / peak) * 100, 1)
+            if lv == rv:
+                winner = "draw"
+                left_gain = right_gain = weight * 0.5
+            elif (lv > rv) == higher_better:
+                winner = "left"
+                left_gain, right_gain = weight, 0.0
+            else:
+                winner = "right"
+                left_gain, right_gain = 0.0, weight
+            left_pts += left_gain
+            right_pts += right_gain
+            rounds.append(
+                {
+                    "dimension": label,
+                    "weight": weight,
+                    "left_value": round(lv, 5) if key == "ctr" else round(lv, 2),
+                    "right_value": round(rv, 5) if key == "ctr" else round(rv, 2),
+                    "left_score": left_norm,
+                    "right_score": right_norm,
+                    "winner": winner,
+                }
+            )
+            left_radar.append({"dimension": label, "score": left_norm})
+            right_radar.append({"dimension": label, "score": right_norm})
+
+        if abs(left_pts - right_pts) < 0.001:
+            overall = "draw"
+            title = "Dead heat"
+            blurb = (
+                f"{left['name']} and {right['name']} split the arena. "
+                "Pick the one that fits your growth vs efficiency goal."
+            )
+        elif left_pts > right_pts:
+            overall = "left"
+            title = f"{left['name']} wins"
+            blurb = (
+                f"{left['name']} takes the clash {left_pts*100:.0f}–{right_pts*100:.0f}. "
+                f"Edge comes from stronger {rounds[0]['dimension'] if rounds[0]['winner']=='left' else 'portfolio balance'}."
+            )
+        else:
+            overall = "right"
+            title = f"{right['name']} wins"
+            blurb = (
+                f"{right['name']} takes the clash {right_pts*100:.0f}–{left_pts*100:.0f}. "
+                f"Consider shifting budget from the weaker contender."
+            )
+
+        won_dims = [r["dimension"] for r in rounds if r["winner"] == overall]
+        if overall != "draw" and won_dims:
+            blurb += f" Round wins: {', '.join(won_dims)}."
+
+        return {
+            "left": {
+                "id": left.get("id"),
+                "name": left["name"],
+                "platform": left.get("platform", ""),
+                "points": round(left_pts * 100, 1),
+            },
+            "right": {
+                "id": right.get("id"),
+                "name": right["name"],
+                "platform": right.get("platform", ""),
+                "points": round(right_pts * 100, 1),
+            },
+            "winner": overall,
+            "title": title,
+            "verdict": blurb,
+            "rounds": rounds,
+            "radar": {
+                "left": left_radar,
+                "right": right_radar,
+            },
+        }
+
     def score_health(self, roas: float, ctr: float, cpa: float, anomaly_count: int) -> float:
         score = 50.0
         score += min(30.0, max(-20.0, (roas - 2.0) * 10))

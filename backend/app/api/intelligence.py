@@ -20,6 +20,8 @@ from app.schemas import (
     AnomalyOut,
     ChatRequest,
     ChatResponse,
+    ClashRequest,
+    ClashResponse,
     ForecastOut,
     InsightOut,
     RecommendationOut,
@@ -136,6 +138,23 @@ def simulate_budget(
     baseline = analytics.campaign_rollups(db, user.tenant_id)
     result = IntelligenceEngine().simulate_budget(baseline, body.multipliers)
     return SimulationResponse(**result)
+
+
+@router.post("/ai/clash", response_model=ClashResponse)
+def clash_campaigns(
+    body: ClashRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if body.left_id == body.right_id:
+        raise HTTPException(status_code=400, detail="Pick two different campaigns")
+    rollups = {c["id"]: c for c in analytics.campaign_rollups(db, user.tenant_id)}
+    left = rollups.get(body.left_id)
+    right = rollups.get(body.right_id)
+    if not left or not right:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    result = IntelligenceEngine().clash_campaigns(left, right)
+    return ClashResponse(**result)
 
 
 @router.post("/ai/regenerate")
